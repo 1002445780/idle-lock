@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>挂机锁 · IdleLock</title>
+<style>
+  :root{
+    --ink:#eef1ff;
+    --ink-dim:rgba(226,232,255,.6);
+    --ink-faint:rgba(226,232,255,.42);
+    --accent:#818cf8;
+    --accent2:#22d3ee;
+    --card-bg:rgba(255,255,255,.055);
+    --card-border:rgba(255,255,255,.1);
+    --danger:#fb7185;
+    --mint:#34d399;
+    --ease-out:cubic-bezier(.16,1,.3,1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{height:100%;overflow:hidden}
+  body{
+    background:linear-gradient(165deg,#06070f 0%,#090c1a 45%,#0c1126 100%);
+    color:var(--ink);
+    font-family:"Segoe UI Variable Display","Segoe UI","Microsoft YaHei UI","Microsoft YaHei","PingFang SC",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    user-select:none;-webkit-user-select:none;
+    transition:opacity .55s ease;
+  }
+  body.leaving{opacity:0}
+  body.nocursor,body.nocursor *{cursor:none!important}
+  input{user-select:text;-webkit-user-select:none}
+
+  /* ================= 背景:极光 + 星空 + 颗粒 ================= */
+  .bg{position:fixed;inset:0;z-index:0;overflow:hidden}
+  .blob{position:absolute;border-radius:50%;filter:blur(90px);mix-blend-mode:screen;will-change:transform}
+  .b1{width:58vw;height:58vw;left:-14vw;top:-24vw;background:radial-gradient(circle at 38% 38%,rgba(79,70,229,.52),transparent 65%);animation:drift1 34s ease-in-out infinite}
+  .b2{width:52vw;height:52vw;right:-16vw;top:-10vw;background:radial-gradient(circle at 60% 40%,rgba(124,58,237,.44),transparent 65%);animation:drift2 43s ease-in-out infinite}
+  .b3{width:62vw;height:62vw;left:16vw;bottom:-32vw;background:radial-gradient(circle at 50% 50%,rgba(8,145,178,.38),transparent 65%);animation:drift3 49s ease-in-out infinite}
+  .b4{width:36vw;height:36vw;right:5vw;bottom:-10vw;background:radial-gradient(circle at 50% 50%,rgba(190,24,93,.26),transparent 62%);animation:drift4 29s ease-in-out infinite}
+  @keyframes drift1{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(9vw,5vh,0) scale(1.18)}}
+  @keyframes drift2{0%,100%{transform:translate3d(0,0,0) scale(1.1)}50%{transform:translate3d(-7vw,8vh,0) scale(.95)}}
+  @keyframes drift3{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-8vw,-6vh,0) scale(1.15)}}
+  @keyframes drift4{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-6vw,-9vh,0) scale(1.22)}}
+  #stars{position:absolute;inset:0}
+  .spotlight{position:absolute;inset:0;background:radial-gradient(640px 340px at 50% 16%,rgba(99,102,241,.14),transparent 70%)}
+  .grain{position:absolute;inset:0;opacity:.05;mix-blend-mode:overlay;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>")}
+  .vignette{position:absolute;inset:0;background:radial-gradient(ellipse at center,transparent 52%,rgba(0,0,0,.52) 100%)}
+
+  /* ================= 布局 ================= */
+  .app{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;align-items:center}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+
+  .top{margin-top:7.5vh;text-align:center}
+  .pill{display:inline-flex;align-items:center;gap:9px;padding:7px 16px;border-radius:999px;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);
+    font-size:12px;letter-spacing:.18em;color:rgba(209,213,249,.85);
+    backdrop-filter:blur(12px);animation:fadeUp .7s .05s var(--ease-out) both}
+  .pill em{font-style:normal;font-size:10px;letter-spacing:.3em;color:rgba(148,163,184,.55)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--mint);animation:pulse 2.2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.45)}70%{box-shadow:0 0 0 9px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+
+  .greet{margin-top:26px;font-size:17px;font-weight:300;letter-spacing:.5em;text-indent:.5em;color:var(--ink-dim);animation:fadeUp .7s .14s var(--ease-out) both}
+  .clock{margin-top:6px;font-size:clamp(64px,10.5vw,124px);font-weight:200;line-height:1.05;letter-spacing:.015em;
+    font-variant-numeric:tabular-nums;text-shadow:0 10px 46px rgba(99,102,241,.38);animation:fadeUp .7s .24s var(--ease-out) both}
+  .clock .sec{font-size:.3em;font-weight:300;color:rgba(165,180,252,.8);margin-left:.12em}
+  .date{margin-top:12px;font-size:14px;font-weight:300;letter-spacing:.42em;text-indent:.42em;color:var(--ink-faint);animation:fadeUp .7s .34s var(--ease-out) both}
+
+  /* ================= 毛玻璃卡片 ================= */
+  .card{position:relative;width:min(400px,88vw);margin-top:5.5vh;padding:32px 40px 24px;border-radius:26px;
+    background:var(--card-bg);backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);
+    box-shadow:0 34px 90px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.07);
+    text-align:center;animation:fadeUp .85s .4s var(--ease-out) both}
+  .card::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;pointer-events:none;
+    background:linear-gradient(160deg,rgba(255,255,255,.3),rgba(255,255,255,.05) 32%,rgba(255,255,255,0) 55%,rgba(129,140,248,.32));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude}
+
+  .lockwrap{position:relative;width:94px;height:94px;margin:0 auto 18px}
+  .ring{position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from 0deg,#6366f1,#22d3ee,#a78bfa,#e879f9,#6366f1);
+    animation:spin 7s linear infinite;filter:drop-shadow(0 0 20px rgba(99,102,241,.45));transition:filter .4s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .core{position:absolute;inset:8px;border-radius:50%;background:rgba(10,13,30,.92);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),0 6px 18px rgba(0,0,0,.35)}
+  .ic{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);transition:.4s cubic-bezier(.34,1.56,.64,1)}
+  .ic-check{opacity:0;transform:translate(-50%,-50%) scale(.35)}
+
+  .cardtitle{font-size:17.5px;font-weight:500;letter-spacing:.14em;text-indent:.14em}
+  .cardsub{margin-top:8px;font-size:12.5px;font-weight:300;color:var(--ink-faint);letter-spacing:.06em}
+  .cardsub b{font-weight:500;color:rgba(199,210,254,.9)}
+
+  .dots{display:flex;gap:11px;justify-content:center;align-items:center;min-height:24px;margin:22px 0 0;transition:opacity .3s}
+  .dot{width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.1);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18);transition:background .18s,box-shadow .18s;animation:pop .18s var(--ease-out)}
+  .dot.on{background:linear-gradient(135deg,#818cf8,#22d3ee);box-shadow:0 0 12px rgba(129,140,248,.75),inset 0 0 0 1px rgba(255,255,255,.25)}
+  @keyframes pop{from{transform:scale(.3);opacity:0}to{transform:scale(1);opacity:1}}
+  .chip{height:20px;padding:0 9px;border-radius:10px;background:rgba(129,140,248,.16);color:#c7d2fe;font-size:11px;display:flex;align-items:center}
+  .caret{width:3px;height:20px;border-radius:2px;background:linear-gradient(#818cf8,#22d3ee);box-shadow:0 0 10px rgba(129,140,248,.85);animation:blink 1.2s steps(1) infinite;margin-left:3px}
+  @keyframes blink{50%{opacity:.2}}
+  .card.cooldown .dots{opacity:.32}
+
+  .msg{min-height:20px;margin-top:13px;font-size:13px;font-weight:300;color:var(--ink-faint);letter-spacing:.05em;transition:color .25s}
+  .msg.err{color:var(--danger)}
+  .hintline{min-height:18px;margin-top:3px;font-size:12px;font-weight:300;color:rgba(250,204,21,.5);letter-spacing:.08em}
+
+  .unlockbtn{margin-top:14px;width:100%;height:44px;border-radius:13px;border:1px solid rgba(255,255,255,.14);
+    background:linear-gradient(135deg,rgba(129,140,248,.16),rgba(34,211,238,.09));
+    color:#dbe3ff;font-size:13.5px;font-weight:400;letter-spacing:.5em;text-indent:.5em;cursor:pointer;transition:.25s;font-family:inherit}
+  .unlockbtn:hover{border-color:rgba(129,140,248,.65);box-shadow:0 10px 30px rgba(99,102,241,.28);background:linear-gradient(135deg,rgba(129,140,248,.24),rgba(34,211,238,.14))}
+  .unlockbtn:active{transform:scale(.985)}
+
+  .cardfoot{display:flex;justify-content:space-between;margin-top:20px;padding-top:15px;border-top:1px solid rgba(255,255,255,.07);
+    font-size:12px;font-weight:300;color:var(--ink-faint);letter-spacing:.06em;font-variant-numeric:tabular-nums}
+
+  .card.shake{animation:shake .55s}
+  @keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+  .card.error .ring{background:conic-gradient(from 0deg,#f43f5e,#fb7185,#f43f5e);filter:drop-shadow(0 0 20px rgba(244,63,94,.5))}
+  .card.success .ring{background:conic-gradient(from 0deg,#34d399,#22d3ee,#34d399);filter:drop-shadow(0 0 24px rgba(52,211,153,.6));animation-duration:3s}
+  .card.success .ic-lock{opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  .card.success .ic-check{opacity:1;transform:translate(-50%,-50%) scale(1)}
+
+  /* ================= 首次使用设置卡片 ================= */
+  .setuptag{display:inline-block;padding:5px 13px;border-radius:999px;margin-bottom:16px;
+    background:rgba(129,140,248,.12);border:1px solid rgba(129,140,248,.3);
+    font-size:10.5px;letter-spacing:.28em;text-indent:.28em;color:#c7d2fe}
+  .field{margin-bottom:13px;text-align:left}
+  .field label{display:block;margin-bottom:7px;font-size:10.5px;letter-spacing:.3em;color:rgba(199,210,254,.6)}
+  .field input{width:100%;height:46px;border-radius:13px;padding:0 15px;font-size:15px;font-family:inherit;
+    background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.1);color:#fff;outline:none;transition:.22s}
+  .field input::placeholder{color:rgba(148,163,184,.4)}
+  .field input:focus{border-color:rgba(129,140,248,.65);box-shadow:0 0 0 3px rgba(99,102,241,.16);background:rgba(255,255,255,.075)}
+  .setup .msg{margin-top:2px}
+  .primary{width:100%;height:46px;border:none;border-radius:13px;margin-top:12px;cursor:pointer;
+    background:linear-gradient(135deg,#6366f1,#8b5cf6 55%,#06b6d4 135%);
+    color:#fff;font-size:14px;font-weight:600;letter-spacing:.4em;text-indent:.4em;font-family:inherit;
+    box-shadow:0 14px 36px rgba(99,102,241,.4);transition:.25s}
+  .primary:hover{filter:brightness(1.12);box-shadow:0 16px 42px rgba(99,102,241,.5)}
+  .primary:active{transform:scale(.985)}
+  .note{margin-top:14px;font-size:11px;font-weight:300;line-height:1.8;color:rgba(148,163,184,.45)}
+
+  /* ================= 页脚 & 其它 ================= */
+  .foot{position:absolute;bottom:24px;left:0;right:0;display:flex;justify-content:space-between;padding:0 32px;
+    font-size:11.5px;font-weight:300;letter-spacing:.14em;color:rgba(255,255,255,.35);animation:fadeUp .8s .6s var(--ease-out) both}
+  .foot em{font-style:normal;opacity:.6}
+  #battery .btxt{margin-left:4px}
+  .demotag{position:fixed;top:16px;left:16px;z-index:5;display:none;padding:5px 12px;border-radius:999px;
+    background:rgba(250,204,21,.1);border:1px solid rgba(250,204,21,.3);color:rgba(250,204,21,.85);font-size:11px;letter-spacing:.1em}
+  .toast{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:6;
+    padding:9px 18px;border-radius:999px;background:rgba(250,204,21,.08);
+    border:1px solid rgba(250,204,21,.35);color:rgba(253,224,71,.9);
+    font-size:12.5px;font-weight:300;letter-spacing:.08em;backdrop-filter:blur(10px);animation:fadeUp .4s var(--ease-out)}
+  .hotkey{opacity:.7}
+
+  @media (max-height:840px){
+    .top{margin-top:4.5vh}
+    .greet{margin-top:16px}
+    .clock{font-size:clamp(56px,9vw,96px)}
+    .card{margin-top:3.5vh;padding:24px 38px 18px}
+  }
+</style>
+</head>
+<body>
+  <div class="bg">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div>
+    <canvas id="stars"></canvas>
+    <div class="spotlight"></div>
+    <div class="grain"></div>
+    <div class="vignette"></div>
+  </div>
+
+  <div class="demotag" id="demotag">DEMO · 演示模式(密码 1234)</div>
+
+  <div class="app">
+    <header class="top">
+      <div class="pill"><span class="pulse"></span>挂机保护中<em>SESSION&nbsp;PROTECTED</em></div>
+      <div class="greet" id="greet">你好</div>
+      <div class="clock" id="clock">--:--<span class="sec">:--</span></div>
+      <div class="date" id="date">载入中</div>
+    </header>
+
+    <!-- 锁定卡片 -->
+    <main class="card" id="lockCard" hidden>
+      <div class="lockwrap">
+        <div class="ring"></div>
+        <div class="core">
+          <svg class="ic ic-lock" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#c7d2fe" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>
+            <circle cx="12" cy="15.2" r="1.4" fill="#c7d2fe" stroke="none"/>
+          </svg>
+          <svg class="ic ic-check" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12.5l4.5 4.5L19 8.5"/>
+          </svg>
+        </div>
+      </div>
+      <h1 class="cardtitle">挂机锁已开启</h1>
+      <p class="cardsub">输入密码,按 <b>Enter ↵</b> 解锁</p>
+      <div class="dots" id="dots"></div>
+      <div class="msg" id="msg"></div>
+      <div class="hintline" id="hintline"></div>
+      <button class="unlockbtn" id="unlockBtn">解&ensp;锁</button>
+      <div class="cardfoot">
+        <span id="elapsed">已挂机 00:00</span>
+        <span id="since">--:-- 锁定</span>
+      </div>
+    </main>
+
+    <!-- 首次使用:创建密码 -->
+    <main class="card setup" id="setupCard" hidden>
+      <div class="setuptag">FIRST&nbsp;RUN&nbsp;·&nbsp;首次使用</div>
+      <h1 class="cardtitle">创建解锁密码</h1>
+      <p class="cardsub">密码仅保存在本机,经 PBKDF2 加密</p>
+      <form id="setupForm" novalidate style="margin-top:20px">
+        <div class="field"><label>解 锁 密 码</label><input type="password" id="pw1" autocomplete="new-password" placeholder="至少 4 位"></div>
+        <div class="field"><label>确 认 密 码</label><input type="password" id="pw2" autocomplete="new-password" placeholder="再输入一次"></div>
+        <div class="field"><label>密码提示(可选)</label><input type="text" id="hintIn" placeholder="例如:我的常用昵称"></div>
+        <div class="msg" id="setupMsg"></div>
+        <button class="primary" type="submit">开 启 保 护</button>
+      </form>
+      <p class="note">建议使用字母、数字或符号作为密码(锁定状态下输入法会被禁用)<br>忘记密码:删除 %APPDATA%\IdleLock\config.json 后重新设置</p>
+    </main>
+
+    <!-- 组件初始化中/失败 -->
+    <main class="card" id="bridgeCard" hidden>
+      <h1 class="cardtitle">正在连接程序组件</h1>
+      <p class="cardsub" id="bridgeMsg">系统组件初始化中,请稍候…</p>
+      <p class="note">若长时间停留在此界面,请按<br>
+        <b style="color:rgba(253,224,71,.85);letter-spacing:.12em">Ctrl + Alt + F12</b><br>紧急退出挂机锁</p>
+    </main>
+
+    <div class="toast" id="toast" hidden>键盘焦点已丢失 · 点击屏幕任意位置恢复输入</div>
+
+    <footer class="foot">
+      <span>IDLE LOCK · 挂机锁 <em>v1.1</em></span>
+      <span class="hotkey">紧急退出:Ctrl + Alt + F12</span>
+      <span id="battery"><span class="btxt">…</span></span>
+    </footer>
+  </div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const MAXDOTS = 12, MAXLEN = 32;
+
+/* ---------------- API 桥接:真实 pywebview 或演示模式 ---------------- */
+let api = null, demo = false, booted = false;
+const FORCE_DEMO = /[?&]demo/.test(location.search);
+const withTimeout = (promise, ms) => Promise.race([
+  promise,
+  new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms)),
+]);
+
+async function waitBridge(ms){
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms){
+    if (window.pywebview && window.pywebview.api) return true;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return !!(window.pywebview && window.pywebview.api);
+}
+
+function makeDemo(){
+  const KEY = 'idlelock_demo';
+  let st = null;
+  try { st = JSON.parse(sessionStorage.getItem(KEY)); } catch(e){}
+  function save(){ try{ sessionStorage.setItem(KEY, JSON.stringify(st)); }catch(e){} }
+  if (!st){
+    if (/[?&]setup/.test(location.search)) st = { first_run: true };
+    else st = { first_run:false, pwd:'1234', hint:'我的生日', locked_at: Date.now()/1000 - 204, attempts:0 };
+    save();
+  }
+  return {
+    async get_state(){ return { first_run: !!st.first_run, locked_at: st.locked_at || Date.now()/1000, hint: st.hint || '', version:'demo' }; },
+    async verify_password(p){
+      if (st.cooldownUntil && Date.now() < st.cooldownUntil)
+        return { ok:false, attempts: st.attempts||0, cooldown: Math.ceil((st.cooldownUntil - Date.now())/1000) };
+      if (p === st.pwd){ st.attempts = 0; save(); return { ok:true }; }
+      st.attempts = (st.attempts||0) + 1;
+      const r = { ok:false, attempts: st.attempts };
+      if (st.attempts >= 5){ st.cooldownUntil = Date.now() + 30000; r.cooldown = 30; }
+      save(); return r;
+    },
+    async set_password(p, h){
+      if ((p||'').length < 4) return { ok:false, error:'too_short' };
+      st = { first_run:false, pwd:p, hint:h||'', locked_at: Date.now()/1000, attempts:0 };
+      save(); return { ok:true };
+    },
+    async unlock_and_exit(){ /* 演示:仅恢复界面 */ },
+    async set_ime(){ return { ok:false }; },
+    async get_battery(){ return { percent:86, charging:true }; }
+  };
+}
+
+function trySetIme(enable){
+  try { if (api && api.set_ime) api.set_ime(enable); } catch(e){}
+}
+
+function showBridgeCard(msg){
+  $('lockCard').hidden = true; $('setupCard').hidden = true;
+  if (msg) $('bridgeMsg').textContent = msg;
+  $('bridgeCard').hidden = false;
+}
+
+function boot(){
+  if (booted) return; booted = true;
+  $('bridgeCard').hidden = true;
+  if (demo) $('demotag').style.display = 'block';
+  refreshBattery(); setInterval(refreshBattery, 30000);
+  withTimeout(api.get_state(), 6000).then(st => {
+    S.hint = st.hint || '';
+    if (st.first_run) enterSetup();
+    else enterLocked(st.locked_at);
+  }).catch(() => {
+    if (demo){ enterLocked(Date.now()/1000 - 204); return; }
+    // 真实环境下组件无响应:明确提示 + 持续重试,绝不伪装成演示模式
+    showBridgeCard('程序组件响应超时,继续等待…');
+    booted = false;
+    scheduleReboot();
+  });
+}
+
+function scheduleReboot(){
+  const iv = setInterval(() => {
+    if (window.pywebview && window.pywebview.api){
+      clearInterval(iv);
+      api = window.pywebview.api;
+      boot();
+    }
+  }, 800);
+}
+
+
+/* ---------------- 状态 ---------------- */
+const S = { mode:'boot', buf:[], lockedAt:0, attempts:0, hint:'', busy:false, cooldownLeft:0, unlocked:false };
+let msgTimer = null;
+
+/* ---------------- 界面切换 ---------------- */
+function enterSetup(){
+  S.mode = 'setup';
+  trySetIme(true);   // 设置界面保持输入法可用,方便输入中文提示语
+  $('lockCard').hidden = true;
+  $('setupCard').hidden = false;
+  $('setupMsg').textContent = '';
+  setTimeout(() => { $('pw1').focus(); try { window.focus(); } catch(e){} }, 350);
+}
+function enterLocked(lockedAt){
+  S.mode = 'locked';
+  trySetIme(false);  // 锁定界面禁用输入法,防止按键被组字拦截
+  S.lockedAt = lockedAt || Date.now()/1000;
+  $('setupCard').hidden = true;
+  $('lockCard').hidden = false;
+  renderDots();
+  updateElapsed(); setInterval(updateElapsed, 1000);
+  const p = x => String(x).padStart(2,'0');
+  const d0 = new Date(S.lockedAt * 1000);
+  $('since').textContent = `${p(d0.getHours())}:${p(d0.getMinutes())} 锁定`;
+  setTimeout(() => { try { window.focus(); } catch(e){} }, 200);
+}
+
+/* ---------------- 时钟 ---------------- */
+function tickClock(){
+  const n = new Date(), p = x => String(x).padStart(2,'0');
+  $('clock').innerHTML = `${p(n.getHours())}:${p(n.getMinutes())}<span class="sec">:${p(n.getSeconds())}</span>`;
+  $('date').textContent = `${n.getMonth()+1}月${n.getDate()}日 · 星期${'日一二三四五六'[n.getDay()]}`;
+  const h = n.getHours();
+  $('greet').textContent = h<5 ? '夜深了' : h<9 ? '早上好' : h<12 ? '上午好' : h<14 ? '中午好' : h<18 ? '下午好' : h<23 ? '晚上好' : '夜深了';
+}
+function fmtDur(sec){
+  const p = x => String(x).padStart(2,'0');
+  if (sec < 3600) return `${p(sec/60|0)}:${p(sec%60)}`;
+  return `${(sec/3600)|0}:${p((sec/60|0)%60)}:${p(sec%60)}`;
+}
+function updateElapsed(){
+  $('elapsed').textContent = `已挂机 ${fmtDur(Math.max(0, (Date.now()/1000 - S.lockedAt))|0)}`;
+}
+
+/* ---------------- 密码输入 ---------------- */
+function renderDots(){
+  const c = $('dots'); c.innerHTML = '';
+  const shown = Math.min(S.buf.length, MAXDOTS);
+  const slots = Math.max(6, S.buf.length);
+  for (let i = 0; i < slots; i++){
+    const d = document.createElement('span');
+    d.className = 'dot' + (i < shown ? ' on' : '');
+    c.appendChild(d);
+  }
+  if (S.buf.length > MAXDOTS){
+    const ch = document.createElement('span'); ch.className = 'chip';
+    ch.textContent = '+' + (S.buf.length - MAXDOTS); c.appendChild(ch);
+  }
+  if (S.cooldownLeft <= 0){ const caret = document.createElement('span'); caret.className = 'caret'; c.appendChild(caret); }
+}
+function setMsg(text, err){
+  const m = $('msg'); m.textContent = text || ''; m.classList.toggle('err', !!err);
+  clearTimeout(msgTimer);
+  if (text && !err) msgTimer = setTimeout(() => { if (!S.unlocked) setMsg(''); }, 3000);
+}
+function showHint(){
+  $('hintline').textContent = (S.attempts > 0 && S.hint) ? `提示 · ${S.hint}` : '';
+}
+function shakeCard(card, errRing){
+  card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
+  if (errRing){
+    card.classList.add('error');
+    setTimeout(() => card.classList.remove('error'), 900);
+  }
+}
+
+function onKey(e){
+  if (S.mode !== 'locked' || S.unlocked) return;
+  if (e.key === 'Process' || e.isComposing){
+    // 按键被输入法组字拦截(通常 IME 已在锁定时禁用,此处为兜底提示)
+    e.preventDefault();
+    setMsg('按键被输入法拦截 · 按 Shift 切换英文输入,或按 Ctrl+Alt+F12 紧急退出', true);
+    return;
+  }
+  const handled = e.key.length === 1 || ['Backspace','Enter','Tab','F5','F11','F12'].includes(e.key);
+  if (!handled) return;
+  e.preventDefault();
+  if (S.busy || S.cooldownLeft > 0) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (e.key === 'Backspace'){ S.buf.pop(); renderDots(); return; }
+  if (e.key === 'Enter'){ submit(); return; }
+  if (e.key.length === 1 && S.buf.length < MAXLEN){ S.buf.push(e.key); renderDots(); }
+}
+
+async function submit(){
+  if (S.busy || S.cooldownLeft > 0 || S.unlocked) return;
+  if (S.buf.length === 0){ setMsg('请先输入密码'); return; }
+  S.busy = true;
+  let res = null;
+  try { res = await api.verify_password(S.buf.join('')); }
+  catch(e){ res = { ok:false, attempts: S.attempts + 1 }; }
+  S.busy = false;
+  if (res && res.ok){ success(); return; }
+  S.buf = []; renderDots();
+  if (res && res.error === 'no_password'){ enterSetup(); return; }
+  S.attempts = (res && res.attempts) || (S.attempts + 1);
+  shakeCard($('lockCard'), true);
+  if (res && res.cooldown){ startCooldown(res.cooldown); }
+  else setMsg(`密码错误(第 ${S.attempts} 次)`, true);
+  showHint();
+}
+
+function startCooldown(sec){
+  S.cooldownLeft = sec; S.buf = []; renderDots();
+  $('lockCard').classList.add('cooldown');
+  setMsg(`尝试次数过多 · ${sec}s 后可重试`, true);
+  const iv = setInterval(() => {
+    S.cooldownLeft--;
+    if (S.cooldownLeft <= 0){
+      clearInterval(iv); S.cooldownLeft = 0;
+      $('lockCard').classList.remove('cooldown');
+      setMsg(''); renderDots();
+    } else setMsg(`尝试次数过多 · ${S.cooldownLeft}s 后可重试`, true);
+  }, 1000);
+}
+
+async function success(){
+  S.unlocked = true;
+  setMsg('身份验证通过,正在解锁…');
+  $('lockCard').classList.add('success');
+  setTimeout(() => document.body.classList.add('leaving'), 600);
+  setTimeout(() => {
+    try { api.unlock_and_exit(); } catch(e){}
+    if (demo){ // 演示模式:复原界面
+      document.body.classList.remove('leaving');
+      $('lockCard').classList.remove('success');
+      S.unlocked = false; S.buf = []; renderDots();
+      setMsg('演示完成 · 已模拟解锁 ✓');
+    }
+  }, 1000);
+}
+
+/* ---------------- 首次使用:创建密码 ---------------- */
+async function onSetup(e){
+  e.preventDefault();
+  const p1 = $('pw1').value, p2 = $('pw2').value, hint = $('hintIn').value.trim();
+  const m = $('setupMsg');
+  const fail = t => { m.textContent = t; m.classList.add('err'); shakeCard($('setupCard')); };
+  if (p1.length < 4) return fail('密码至少需要 4 位');
+  if (p1 !== p2) return fail('两次输入的密码不一致');
+  m.classList.remove('err'); m.textContent = '正在加密保存…';
+  let r = null;
+  try { r = await api.set_password(p1, hint); } catch(err){ r = { ok:false }; }
+  if (!r || !r.ok) return fail(r && r.error === 'too_short' ? '密码至少需要 4 位' : '保存失败,请重试');
+  m.textContent = '已保存 ✓';
+  try {
+    const st = await api.get_state();
+    enterLocked(st.locked_at);
+  } catch(_){ enterLocked(Date.now()/1000); }
+}
+
+/* ---------------- 电池 ---------------- */
+const BOLT = '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="vertical-align:-1.5px"><path d="M13 2 4.5 13.5H11L9.5 22 19 9.5h-6.5L13 2z"/></svg>';
+async function refreshBattery(){
+  let b = null;
+  try { b = await api.get_battery(); } catch(e){}
+  const el = $('battery');
+  if (!b || b.percent == null){ el.innerHTML = '<span class="btxt">AC 供电</span>'; return; }
+  el.innerHTML = `${b.charging ? BOLT : ''}<span class="btxt">电量 ${b.percent}%</span>`;
+}
+
+/* ---------------- 星空粒子 ---------------- */
+const canvas = $('stars'), ctx = canvas.getContext('2d');
+let stars = [], vw = 0, vh = 0;
+function initStars(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  vw = innerWidth; vh = innerHeight;
+  canvas.width = vw * dpr; canvas.height = vh * dpr;
+  canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  stars = [];
+  const n = Math.round(vw * vh / 13000);
+  for (let i = 0; i < n; i++){
+    stars.push({
+      x: Math.random() * vw, y: Math.random() * vh,
+      r: Math.random() * 1.0 + 0.35,
+      vx: (Math.random() - .5) * 0.09, vy: (Math.random() - .5) * 0.05,
+      baseA: Math.random() * 0.5 + 0.22,
+      tw: Math.random() * 1.6 + 0.3, ph: Math.random() * Math.PI * 2,
+    });
+  }
+}
+function starLoop(t){
+  requestAnimationFrame(starLoop);
+  if (document.hidden) return;
+  ctx.clearRect(0, 0, vw, vh);
+  ctx.fillStyle = '#cdd7ff';
+  for (const s of stars){
+    s.x += s.vx; s.y += s.vy;
+    if (s.x < -4) s.x = vw + 4; else if (s.x > vw + 4) s.x = -4;
+    if (s.y < -4) s.y = vh + 4; else if (s.y > vh + 4) s.y = -4;
+    let a = s.baseA + Math.sin(t/1000 * s.tw + s.ph) * 0.22;
+    ctx.globalAlpha = Math.min(0.95, Math.max(0.04, a));
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, 6.2832); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+window.addEventListener('resize', () => { if (booted) initStars(); });
+
+/* ---------------- 事件绑定 ---------------- */
+function bindEvents(){
+  window.addEventListener('keydown', onKey, true);
+  document.addEventListener('contextmenu', e => e.preventDefault());
+  $('unlockBtn').addEventListener('click', submit);
+  $('setupForm').addEventListener('submit', onSetup);
+  let hideT = null;
+  const wake = () => {
+    document.body.classList.remove('nocursor');
+    clearTimeout(hideT);
+    hideT = setTimeout(() => document.body.classList.add('nocursor'), 2600);
+  };
+  window.addEventListener('mousemove', wake);
+  wake();
+  // 焦点保障:失焦时提示,点击屏幕恢复输入
+  window.addEventListener('blur', () => {
+    if (S.mode === 'locked' && !S.unlocked) $('toast').hidden = false;
+  });
+  window.addEventListener('focus', () => { $('toast').hidden = true; });
+  document.addEventListener('mousedown', () => { try { window.focus(); } catch(e){} });
+  window.addEventListener('load', () => { try { window.focus(); } catch(e){} });
+}
+
+/* ---------------- 启动 ---------------- */
+bindEvents();
+initStars(); requestAnimationFrame(starLoop);
+tickClock(); setInterval(tickClock, 250);
+try { window.focus(); } catch(e){}
+
+if (FORCE_DEMO){
+  api = makeDemo(); demo = true; boot();
+} else {
+  waitBridge(8000).then(ok => {
+    if (ok){ api = window.pywebview.api; boot(); }
+    else { showBridgeCard('系统组件初始化较慢,继续等待…'); scheduleReboot(); }
+  });
+}
+</script>
+</body>
+</html>
